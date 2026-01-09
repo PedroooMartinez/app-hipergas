@@ -5,7 +5,8 @@ from io import BytesIO
 
 # 1. Configuración de página
 st.set_page_config(page_title="Hipergas Pay", page_icon="🔥")
-
+# Insertar logo de Hipergas
+st.image("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR_K7mKOfGAn_0Y07DshW_4N-RAt71Ym686iw&s", width=150)
 st.title("🔥 Hipergas Pagos")
 st.write("Sistema de cobro para repartidores")
 
