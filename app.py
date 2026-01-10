@@ -10,20 +10,19 @@ from google.oauth2.service_account import Credentials
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Sistema Hipergas", page_icon="🔥")
 
+# --- LOGO DE LA EMPRESA ---
+try:
+    st.image("Logo-Hipergas.jpg", width=300) 
+except:
+    pass 
+
 # 2. CONEXIÓN A GOOGLE SHEETS
 def conectar_google():
     try:
-        # Definimos los permisos que necesita la app
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        
-        # Sacamos los datos de tus Secrets
         info_llave = st.secrets["gcp_service_account"]
-        
-        # Creamos las credenciales
         creds = Credentials.from_service_account_info(info_llave, scopes=scope)
         client = gspread.authorize(creds)
-        
-        # Abrimos la planilla
         sh = client.open("Rendicion_Hipergas")
         return sh.sheet1
     except Exception as e:
@@ -78,13 +77,11 @@ else:
         monto = productos[prod]
 
         if st.button(f"Generar QR y Guardar"):
-            # ANOTAR EN EXCEL
             if sheet:
                 fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 sheet.append_row([fecha, st.session_state["usuario"], prod, monto])
                 st.success("✅ Venta anotada")
 
-            # GENERAR QR
             res = sdk.preference().create({"items": [{"title": prod, "quantity": 1, "unit_price": monto}]})
             qr = qrcode.make(res["response"]["init_point"])
             buf = BytesIO()
