@@ -4,94 +4,114 @@ import qrcode
 import pandas as pd
 from io import BytesIO
 from datetime import datetime
+from gspread_streamlit import gspread_streamlit
 
-# 1. Configuración de página
-st.set_page_config(page_title="Hipergas Sistema", page_icon="🔥")
+# 1. CONFIGURACIÓN DE PÁGINA
+st.set_page_config(page_title="Sistema Hipergas", page_icon="🔥")
 
-# --- LISTA DE USUARIOS ---
-usuarios = {
-    "admin": "hiper2024",
-    "juan": "1234",
-    "pedro": "5678"
-}
+# 2. CONEXIÓN A GOOGLE SHEETS (Segura)
+def conectar_google():
+    try:
+        # Usa los Secrets que pegamos antes
+        conn = gspread_streamlit.authorize(st.secrets["gcp_service_account"])
+        # Abre la planilla por su nombre exacto
+        sh = conn.open("Rendicion_Hipergas")
+        return sh.sheet1
+    except Exception as e:
+        st.error(f"Error conectando a Google Sheets: {e}")
+        return None
 
-# --- MEMORIA DE VENTAS (Temporal por ahora) ---
-if "ventas" not in st.session_state:
-    st.session_state["ventas"] = []
+sheet = conectar_google()
 
-# --- PORTERO (Login) ---
+# 3. BASE DE USUARIOS
+usuarios = {"admin": "hiper2024", "juan": "1234", "pedro": "5678"}
+
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
+# --- LÓGICA DE LOGIN ---
 if not st.session_state["autenticado"]:
-    st.image("Logo-Hipergas.jpg", width=250)
-    st.title("🔐 Acceso Personal")
+    st.title("🔐 Acceso Hipergas")
     user = st.text_input("Usuario").lower()
     password = st.text_input("Contraseña", type="password")
+    
     if st.button("Entrar"):
         if user in usuarios and usuarios[user] == password:
             st.session_state["autenticado"] = True
             st.session_state["usuario"] = user
             st.rerun()
         else:
-            st.error("Error de credenciales")
+            st.error("Usuario o contraseña incorrectos")
+
+# --- APP UNA VEZ LOGUEADO ---
 else:
-    # SI YA ENTRÓ
-    st.sidebar.write(f"Usuario: **{st.session_state['usuario']}**")
+    st.sidebar.title(f"Bienvenido {st.session_state['usuario'].capitalize()}")
     if st.sidebar.button("Cerrar Sesión"):
         st.session_state["autenticado"] = False
         st.rerun()
 
-    # --- CASO 1: VISTA DEL ADMINISTRADOR ---
+    # --- VISTA ADMINISTRADOR ---
     if st.session_state["usuario"] == "admin":
-        st.title("📊 Panel de Control - Ventas del Día")
-        
-        if not st.session_state["ventas"]:
-            st.info("Todavía no se registraron ventas hoy.")
-        else:
-            df = pd.DataFrame(st.session_state["ventas"])
-            
-            # Mostrar resumen por chofer
-            st.subheader("Resumen por Chofer")
-            resumen = df.groupby("Chofer")["Monto"].sum()
-            st.table(resumen)
-            
-            # Mostrar detalle de todas las ventas
-            st.subheader("Detalle de movimientos")
-            st.dataframe(df)
+        st.title("📊 Control de Ventas Real")
+        st.write("Estos datos se cargan directamente desde Google Sheets.")
 
-    # --- CASO 2: VISTA DEL CHOFER ---
+        if sheet:
+            if st.button("🔄 Actualizar Datos"):
+                st.rerun()
+            
+            # Traer datos de la planilla
+            datos = pd.DataFrame(sheet.get_all_records())
+            
+            if not datos.empty:
+                st.dataframe(datos, use_container_width=True)
+            else:
+                st.info("Aún no hay ventas registradas en el Excel.")
+        else:
+            st.error("No se pudo cargar la planilla. Revisá el nombre en Google Sheets.")
+
+    # --- VISTA CHOFERES ---
     else:
-        st.image("Logo-Hipergas.jpg", width=180)
-        st.title(f"🚚 Chofer: {st.session_state['usuario'].capitalize()}")
+        st.title("🚚 Registrar Nueva Venta")
         
+        # Configuración de Mercado Pago
         token = st.secrets.get("MP_ACCESS_TOKEN")
-        if not token:
-            st.error("Error de conexión con Mercado Pago")
-        else:
-            sdk = mercadopago.SDK(token)
-            prod = st.selectbox("Carga de producto:", ["Garrafa 10kg", "Garrafa 15kg", "Cilindro 45kg"])
-            precios = {"Garrafa 10kg": 15000, "Garrafa 15kg": 22000, "Cilindro 45kg": 45000}
-            monto = precios[prod]
+        sdk = mercadopago.SDK(token)
 
-            if st.button(f"Generar QR - ${monto}"):
-                # Generar el cobro
-                pref = {"items": [{"title": f"Hipergas - {prod}", "quantity": 1, "unit_price": monto}]}
-                res = sdk.preference().create(pref)
-                link = res["response"]["init_point"]
-                
-                # Guardar en la "memoria" de la App
-                nueva_venta = {
-                    "Hora": datetime.now().strftime("%H:%M:%S"),
-                    "Chofer": st.session_state["usuario"],
-                    "Producto": prod,
-                    "Monto": monto
+        productos = {
+            "Garrafa 10kg": 15000,
+            "Garrafa 15kg": 22000,
+            "Cilindro 45kg": 45000
+        }
+        
+        prod = st.selectbox("Seleccione Producto:", list(productos.keys()))
+        monto = productos[prod]
+
+        if st.button(f"Generar QR y Guardar - ${monto}"):
+            with st.spinner("Anotando en el Excel y generando QR..."):
+                # A. Guardar en Google Sheets
+                fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                if sheet:
+                    try:
+                        sheet.append_row([fecha, st.session_state["usuario"], prod, monto])
+                        st.success("✅ Venta guardada en el Excel")
+                    except:
+                        st.error("No se pudo guardar en el Excel, pero generaremos el QR igual.")
+
+                # B. Generar QR de Mercado Pago
+                preference_data = {
+                    "items": [{"title": prod, "quantity": 1, "unit_price": monto}]
                 }
-                st.session_state["ventas"].append(nueva_venta)
+                preference_response = sdk.preference().create(preference_data)
+                link_pago = preference_response["response"]["init_point"]
+
+                # C. Crear imagen QR
+                qr = qrcode.QRCode(box_size=10, border=4)
+                qr.add_data(link_pago)
+                qr.make(fit=True)
+                img_qr = qr.make_image(fill_color="black", back_color="white")
                 
-                # Mostrar QR
-                qr_img = qrcode.make(link)
                 buf = BytesIO()
-                qr_img.save(buf, format="PNG")
-                st.image(buf, caption=f"QR para {prod}")
-                st.success(f"Venta registrada en tu planilla del día.")
+                img_qr.save(buf, format="PNG")
+                
+                st.image(buf, caption=f"QR de Pago - {prod}")
+                st.warning("Pedile al cliente que escanee para pagar.")
