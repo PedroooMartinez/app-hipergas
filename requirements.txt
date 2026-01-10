@@ -1,3 +1,6 @@
+streamlit
 mercadopago
 qrcode
-pillow
+pandas
+gspread-streamlit
+Pillow
