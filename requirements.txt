@@ -2,5 +2,6 @@ streamlit
 mercadopago
 qrcode
 pandas
-gspread-streamlit
+gspread
+google-auth
 Pillow
